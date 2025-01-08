@@ -19,6 +19,7 @@ Please see more visual results and video on our [website](https://mv-dust3rp.git
 ## Update Logs
 
 - 2025-1-1: A gradio demo, all checkpoints, training/evaluation code and training/evaluation trajectories of ScanNet.
+- 2025-1-8: demo view selection improved, better quality for multiple rooms.
 
 ## Installation
 
@@ -75,6 +76,8 @@ The `confidence threshold` controls how many low confidence points should be fil
 The `No. of video frames` is only valid when the input is a video and controls how many frames are uniformly selected from the video for reconstruction.
 
 Note that the demo's inference is slower than what claimed in the paper due to overheads of gradio and model loading. If you need faster runtime, please use our evaluation code.
+
+some [tips](https://github.com/facebookresearch/mvdust3r/issues/5#issuecomment-2578380545) to improve quality especially for multiple rooms.
 
 
 

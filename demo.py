@@ -8,6 +8,7 @@ import functools
 import math
 import os
 import tempfile
+from copy import deepcopy
 
 import gradio
 import numpy as np
@@ -180,6 +181,19 @@ def get_reconstructed_scene(outdir, model, device, silent, image_size, filelist,
         imgs[1]['idx'] = 1
     for img in imgs:
         img['true_shape'] = torch.from_numpy(img['true_shape']).long()
+
+    if len(imgs) < 12:
+        if len(imgs) > 3:
+            imgs[1], imgs[3] = deepcopy(imgs[3]), deepcopy(imgs[1])
+        if len(imgs) > 6:
+            imgs[2], imgs[6] = deepcopy(imgs[6]), deepcopy(imgs[2])
+    else:
+        change_id = len(imgs) // 4 + 1
+        imgs[1], imgs[change_id] = deepcopy(imgs[change_id]), deepcopy(imgs[1])
+        change_id = (len(imgs) * 2) // 4 + 1
+        imgs[2], imgs[change_id] = deepcopy(imgs[change_id]), deepcopy(imgs[2])
+        change_id = (len(imgs) * 3) // 4 + 1
+        imgs[3], imgs[change_id] = deepcopy(imgs[change_id]), deepcopy(imgs[3])
     
     output = inference_mv(imgs, model, device, verbose=not silent)
 
