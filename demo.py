@@ -52,7 +52,7 @@ def get_args_parser():
     parser_url.add_argument("--local_network", action='store_true', default=False,
                             help="make app accessible on local network: address will be set to 0.0.0.0")
     parser_url.add_argument("--server_name", type=str, default=None, help="server url, default is 127.0.0.1")
-    parser.add_argument("--image_size", type=int, default=224, help="image size (note, we do not train and test on other resolutions yet, this should not be changed)")
+    parser.add_argument("--image_size", type=int, default=512, help="image size (note, we do not train and test on other resolutions yet, this should not be changed)")
     parser.add_argument("--server_port", type=int, help="will start gradio app on this port (if available).",
                         default=7860)
     parser_weights = parser.add_mutually_exclusive_group(required=True)
@@ -126,6 +126,10 @@ def get_3D_model_from_scene(outdir, silent, output, min_conf_thr=3, as_pointclou
         conf_sorted = conf.reshape(-1).sort()[0]
         conf_thres = conf_sorted[int(conf_sorted.shape[0] * float(min_conf_thr) * 0.01)]
         msk = conf >= conf_thres
+        
+        for i in range(len(msk)):
+            msk_img = ((rgbimg[i] >= 0.05).all(dim=-1)).to(msk[i].device)
+            msk[i] &= msk_img
         
         # calculate focus:
 
@@ -316,13 +320,13 @@ if __name__ == '__main__':
             raise ValueError("model name not found in weights path")
 
     if args.model_name == "MVD":
-        model = AsymmetricCroCo3DStereoMultiView(pos_embed='RoPE100', img_size=(224, 224), head_type='linear', output_mode='pts3d', depth_mode=('exp', -inf, inf), conf_mode=('exp', 1, 1e9), enc_embed_dim=1024, enc_depth=24, enc_num_heads=16, dec_embed_dim=768, dec_depth=12, dec_num_heads=12, GS = True, sh_degree=0, pts_head_config = {'skip':True})
+        model = AsymmetricCroCo3DStereoMultiView(pos_embed='RoPE100', patch_embed_cls='ManyAR_PatchEmbed', img_size=(512, 512), head_type='linear', output_mode='pts3d', depth_mode=('exp', -inf, inf), conf_mode=('exp', 1, 1e9), enc_embed_dim=1024, enc_depth=24, enc_num_heads=16, dec_embed_dim=768, dec_depth=12, dec_num_heads=12, GS = True, sh_degree=0, pts_head_config = {'skip':True})
         model.to(args.device)
         model_loaded = AsymmetricCroCo3DStereoMultiView.from_pretrained(get_local_path(weights_path)).to(args.device)
         state_dict_loaded = model_loaded.state_dict()
         model.load_state_dict(state_dict_loaded, strict=True)
     elif args.model_name == "MVDp":
-        model = AsymmetricCroCo3DStereoMultiView(pos_embed='RoPE100', img_size=(224, 224), head_type='linear', output_mode='pts3d', depth_mode=('exp', -inf, inf), conf_mode=('exp', 1, 1e9), enc_embed_dim=1024, enc_depth=24, enc_num_heads=16, dec_embed_dim=768, dec_depth=12, dec_num_heads=12, GS = True, sh_degree=0, pts_head_config = {'skip':True}, m_ref_flag=True, n_ref = 4)
+        model = AsymmetricCroCo3DStereoMultiView(pos_embed='RoPE100', patch_embed_cls='ManyAR_PatchEmbed', img_size=(512, 512), head_type='linear', output_mode='pts3d', depth_mode=('exp', -inf, inf), conf_mode=('exp', 1, 1e9), enc_embed_dim=1024, enc_depth=24, enc_num_heads=16, dec_embed_dim=768, dec_depth=12, dec_num_heads=12, GS = True, sh_degree=0, pts_head_config = {'skip':True}, m_ref_flag=True, n_ref = 4)
         model.to(args.device)
         model_loaded = AsymmetricCroCo3DStereoMultiView.from_pretrained(get_local_path(weights_path)).to(args.device)
         state_dict_loaded = model_loaded.state_dict()

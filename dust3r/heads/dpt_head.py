@@ -15,7 +15,8 @@ import torch.nn as nn
 from dust3r.heads.postprocess import postprocess
 import dust3r.utils.path_to_croco  # noqa: F401
 from models.dpt_block import DPTOutputAdapter  # noqa
-
+from dust3r.heads.linear_head import MiddleBlock
+import pdb
 
 class DPTOutputAdapter_fix(DPTOutputAdapter):
     """
@@ -85,9 +86,34 @@ class PixelwiseTaskWithDPT(nn.Module):
         self.dpt = DPTOutputAdapter_fix(**dpt_args)
         dpt_init_args = {} if dim_tokens is None else {'dim_tokens_enc': dim_tokens}
         self.dpt.init(**dpt_init_args)
+        self.skip = True
+        
+        if self.skip:
+            skip_dim = 256
+            self.skip_proj_scale = 1e-4
+            self.skip_proj = nn.Sequential(
+                MiddleBlock(6, skip_dim, activation=True),
+                MiddleBlock(skip_dim, skip_dim, kernel_size=5, activation=True),
+                MiddleBlock(skip_dim, skip_dim, kernel_size=5, activation=True),
+                MiddleBlock(skip_dim, 3, activation=False),
+            )
+            # zero init the last skip proj
+            for m in self.skip_proj[-1].modules():
+                if isinstance(m, nn.Conv2d):
+                    nn.init.zeros_(m.weight)
+                    nn.init.zeros_(m.bias)
 
     def forward(self, x, img_info):
+        img = None
+        if type(x) is tuple:
+            x, img = x
         out = self.dpt(x, image_size=(img_info[0], img_info[1]))
+        
+        if self.skip:
+            skip_input = torch.cat([img, out[:, :3]], dim=1)
+            img_skip = self.skip_proj(skip_input) * self.skip_proj_scale
+            out[:, :3] = out[:, :3] + img_skip
+        
         if self.postprocess:
             out = self.postprocess(out, self.depth_mode, self.conf_mode)
         return out

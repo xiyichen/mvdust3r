@@ -1,0 +1,1 @@
+python demo.py --weights /fs/gamma-projects/3dnvs_gamma/mvdust3r/outputs/MVD_human_512_linear/checkpoint-last.pth --image_size 512

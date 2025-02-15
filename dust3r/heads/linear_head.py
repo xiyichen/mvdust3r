@@ -210,9 +210,9 @@ class GSHead(nn.Module):
 
         patch_size_sqr = patch_size * patch_size
 
-        self.mlp_rgb = build_pytorch_mlp(
-            token_dim, mlp_dim, patch_size_sqr * 3 * self.sh_base, depth=mlp_depth, bias=False
-        )
+        # self.mlp_rgb = build_pytorch_mlp(
+        #     token_dim, mlp_dim, patch_size_sqr * 3 * self.sh_base, depth=mlp_depth, bias=False
+        # )
         self.mlp_opacity = build_pytorch_mlp(
             token_dim, mlp_dim, patch_size_sqr * 1, depth=mlp_depth, bias=False
         )
@@ -224,11 +224,11 @@ class GSHead(nn.Module):
         )
         
         self.cnn_before = None
-        self.cnn_after = None
+        # self.cnn_after = None
 
         if self.skip:
             self.cnn_before = DownSamplings(3, mlp_dim, num_layers=4)
-            self.cnn_after = nn.Sequential(MiddleBlock(3, mlp_dim, activation=True), MiddleBlock(mlp_dim, 3 * self.sh_base, activation=False))
+            # self.cnn_after = nn.Sequential(MiddleBlock(3, mlp_dim, activation=True), MiddleBlock(mlp_dim, 3 * self.sh_base, activation=False))
 
         self.apply(self._init_weights)
         
@@ -253,7 +253,7 @@ class GSHead(nn.Module):
             img_before_output = img_before_output.flatten(-2, -1).permute(0, 2, 1) # B, S, D
             tokens = tokens + img_before_output
 
-        rgb = self.mlp_rgb(tokens) # [bs, n_token, dim]
+        # rgb = self.mlp_rgb(tokens) # [bs, n_token, dim]
         opacity = self.mlp_opacity(tokens)
         scale = self.mlp_scale2(tokens)
         rotation = self.mlp_rotation(tokens)
@@ -268,7 +268,8 @@ class GSHead(nn.Module):
         # )
         scale = scale * 0.1
 
-        output_combine = [rgb, opacity, scale, rotation]
+        # output_combine = [rgb, opacity, scale, rotation]
+        output_combine = [opacity, scale, rotation]
         output_combine_pixel = []
         for feat in output_combine:
             feat = feat.transpose(-1, -2).view(B, -1, H//self.patch_size, W//self.patch_size) # B,D=d*16*16,H//16,W//16
@@ -276,18 +277,19 @@ class GSHead(nn.Module):
             feat = feat.permute(0,2,3,1) # B,H,W,d
             output_combine_pixel.append(feat)
         
-        rgb, opacity, scale, rotation = output_combine_pixel
-        if self.skip:
-            img_after_output = self.cnn_after(img)
-            print('after', img_after_output.shape, rgb.shape)
-            img_after_output = img_after_output.permute(0,2,3,1) # B,H,W,d
-            # rgb = torch.sigmoid(rgb + img_after_output) * 2 - 1
-            rgb = rgb + img_after_output
+        # rgb, opacity, scale, rotation = output_combine_pixel
+        opacity, scale, rotation = output_combine_pixel
+        # if self.skip:
+        #     img_after_output = self.cnn_after(img)
+        #     print('after', img_after_output.shape, rgb.shape)
+        #     img_after_output = img_after_output.permute(0,2,3,1) # B,H,W,d
+        #     # rgb = torch.sigmoid(rgb + img_after_output) * 2 - 1
+        #     rgb = rgb + img_after_output
         
         rotation = nn.functional.normalize(rotation, dim=-1, eps=1e-5)
 
         out = {}
-        out["rgb"] = rgb
+        # out["rgb"] = rgb
         out["opacity"] = opacity
         out["scale"] = scale
         out["rotation"] = rotation

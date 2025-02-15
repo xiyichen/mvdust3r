@@ -13,6 +13,7 @@ from dust3r.utils.geometry import inv, geotrf, normalize_pointcloud, normalize_p
 from dust3r.utils.geometry import get_joint_pointcloud_depth, get_joint_pointcloud_center_scale, get_joint_pointcloud_depths, get_joint_pointcloud_center_scales
 
 from torch.utils.data import default_collate
+import pdb
 
 import random
 from pytorch3d.transforms import so3_relative_angle
@@ -1051,7 +1052,7 @@ class CalcMetrics(): # note that this is not differentiable
 
 # calc_metrics = CalcMetrics()
 # calc_metrics = CalcMetrics(random_crop_size = (224, 224))
-calc_metrics = CalcMetrics(resize = (224, 224))
+calc_metrics = CalcMetrics(resize = (384, 512))
 
 class GSRenderLoss (Criterion, MultiLoss):
 
@@ -1355,6 +1356,7 @@ class GSRenderLoss (Criterion, MultiLoss):
         loss_copy_rgb = 0.
         loss_local = 0.
         loss_lap = 0.
+        loss_opacity = 0.
         
         log_scale = 0.
         
@@ -1377,6 +1379,7 @@ class GSRenderLoss (Criterion, MultiLoss):
             # c2ws_gs = torch.stack([c2w[dp_id] for c2w in c2ws], 0) # [nv, 4, 4]
             c2ws_gs = c2ws_gs_all[dp_id] # [nv, 4, 4]
             gt_imgs = torch.stack([gt1['img'][dp_id]] + [gt2['img'][dp_id] for gt2 in gt2s], 0).permute(0,2,3,1) # [nv, 224, 224, 3] -1~1
+            gt_masks = torch.stack([gt1['foreground_mask'][dp_id]] + [gt2['foreground_mask'][dp_id] for gt2 in gt2s], 0) # [nv, 224, 224] [0,1]
             
             intrinsics = torch.stack([gt1['camera_intrinsics'][dp_id][:3,:3]] + [gt2['camera_intrinsics'][dp_id][:3,:3] for gt2 in gt2s]).cuda() # [nv, 3, 3]
             # pts3d = torch.stack([pred_pts1[dp_id]] + [pred_pts2[dp_id] for pred_pts2 in pred_pts2s], 0) # [n_inference, 224, 224, 3]
@@ -1387,7 +1390,7 @@ class GSRenderLoss (Criterion, MultiLoss):
                 pts3d = pts3d * 0 + gts3d.detach()
 
             pts3d_gs = pts3d.reshape(-1, 3)
-            rgb_gs = torch.stack([pred1['rgb'][dp_id]] + [pred2['rgb'][dp_id] for pred2 in pred2s], 0).flatten(0, -2)
+            # rgb_gs = torch.stack([pred1['rgb'][dp_id]] + [pred2['rgb'][dp_id] for pred2 in pred2s], 0).flatten(0, -2)
             rot_gs = torch.stack([pred1['rotation'][dp_id]] + [pred2['rotation'][dp_id] for pred2 in pred2s], 0).reshape(-1, 4)
             scale_gs = torch.stack([pred1['scale'][dp_id]] + [pred2['scale'][dp_id] for pred2 in pred2s], 0).reshape(-1, 3)
 
@@ -1400,11 +1403,13 @@ class GSRenderLoss (Criterion, MultiLoss):
             # print('debug middle', c2ws_gs.shape, rgb_gs.shape, pts3d_gs.shape, opacity_gs.shape, scale_gs.shape, rot_gs.shape, intrinsics.shape) # debug middle torch.Size([4, 4, 4]) torch.Size([200704, 12]) torch.Size([200704, 3]) torch.Size([200704]) torch.Size([200704, 3]) torch.Size([200704, 4]) torch.Size([4, 3, 3])
             
             if self.rgb_coeff or dp_id == 0:
-                sh_base = rgb_gs.shape[-1] // 3
+                # sh_base = rgb_gs.shape[-1] // 3
+                sh_base = 1
                 SH = False if (self.use_img_rgb and sh_base == 1) else True
                 if self.use_img_rgb:
                     if sh_base == 1:
-                        rgb_gs = (rgb_gs[:] * 0).mean() + gt_imgs[:-num_render_views] if num_render_views else gt_imgs
+                        # rgb_gs = (rgb_gs[:] * 0).mean() + gt_imgs[:-num_render_views] if num_render_views else gt_imgs
+                        rgb_gs = gt_imgs[:-num_render_views] if num_render_views else gt_imgs
                         rgb_gs = rgb_gs.reshape(-1, 3)
                     else:
                         sh_degree = int(np.sqrt(sh_base)) - 1
@@ -1441,6 +1446,17 @@ class GSRenderLoss (Criterion, MultiLoss):
                 res = self.gs_renderer(torch.linalg.inv(c2ws_gs), intrinsics, pts3d_gs, rgb_gs, opacity_gs, scale_gs, rot_gs, eps2d=0.1, SH = SH)
                 # res = self.gs_renderer(torch.linalg.inv(c2ws_gs), intrinsics, pts3d_gs, rgb_gs, torch.ones_like(opacity_gs), torch.ones_like(scale_gs) * 1e-3, rot_gs, eps2d=0.1, SH = SH)
                 rgb_render = res['rgb'] # [nv, 224, 224, 3]
+                opacity_render = res['mask'][...,0] # [nv, 224, 224]
+                
+                if '0' in str(rgb_render.device) and dp_id == 0:
+                    for vi in range(len(rgb_render)):
+                        pred = (rgb_render[vi]+1)/2
+                        gt = (gt_imgs[vi]+1)/2
+                        mask = opacity_render[vi]
+                        cv2.imwrite(f'./debug/{vi}_gt.png', gt.detach().cpu().numpy()[:,:,::-1]*255)
+                        cv2.imwrite(f'./debug/{vi}_pred.png', pred.detach().cpu().numpy()[:,:,::-1]*255)
+                        cv2.imwrite(f'./debug/{vi}_mask.png', mask.detach().cpu().numpy()*255)
+                # pdb.set_trace()
             else:
                 rgb_render = torch.zeros_like(gt_imgs)
             photometric_results = [calc_metrics.calc_metrics(gt_imgs[i].permute(2,0,1), rgb_render[i].permute(2,0,1), log) for i in range(nv)]
@@ -1451,6 +1467,7 @@ class GSRenderLoss (Criterion, MultiLoss):
             log_scale = log_scale + scale_gs.mean()
             
             ls = self.criterion(rgb_render[mask_all[dp_id]], gt_imgs[mask_all[dp_id]]) # in criterion (L21), mean is calculated
+            mask_loss = self.criterion(opacity_render.reshape(-1,1), gt_masks.reshape(-1,1).to(opacity_render.device))
             if self.render_included:
                 render_all.append(rgb_render.detach().cpu())
             loss_rgb = loss_rgb + ls
@@ -1459,13 +1476,14 @@ class GSRenderLoss (Criterion, MultiLoss):
                 loss_lpips = loss_lpips + calc_metrics.calc_lpips(gt_imgs.permute(0,3,1,2), rgb_render.permute(0,3,1,2))
                         
         loss_rgb = loss_rgb / bs
+        loss_opacity = loss_opacity + mask_loss
         loss_scale = loss_scale / bs
         loss_lpips = loss_lpips / bs
         loss_copy_rgb = loss_copy_rgb / bs
 
         log_scale = log_scale / bs
 
-        loss =  self.rgb_coeff * loss_rgb + 1.0 * loss_scale + self.lpips_coeff * loss_lpips + self.copy_rgb_coeff * loss_copy_rgb + self.local_loss_coeff * loss_local + self.lap_loss_coeff * loss_lap
+        loss = loss_opacity + self.rgb_coeff * loss_rgb + 1.0 * loss_scale + self.lpips_coeff * loss_lpips + self.copy_rgb_coeff * loss_copy_rgb + self.local_loss_coeff * loss_local + self.lap_loss_coeff * loss_lap
 
         self_name = type(self).__name__
         details = {}
@@ -1477,6 +1495,7 @@ class GSRenderLoss (Criterion, MultiLoss):
             photometrics_inference_all_list = combine_dict(photometrics_inference_all, make_list=True)
             photometrics_render_all_list = combine_dict(photometrics_render_all, make_list=True)
             details[self_name+'_gs_rgb'] = float(loss_rgb)
+            details[self_name+'_gs_mask'] = float(loss_opacity)
             details[self_name+'_gs_copy_rgb'] = float(loss_copy_rgb)
             details[self_name+'_gs_scale_clip'] = float(loss_scale)
             details[self_name+'_gs_scale'] = float(log_scale)

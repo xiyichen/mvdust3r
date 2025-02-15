@@ -1,0 +1,4 @@
+outputs/*
+.gradio
+debug/*
+**/__pycache__/

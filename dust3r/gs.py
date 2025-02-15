@@ -22,14 +22,14 @@ from gsplat.rendering import rasterization
 from gsplat.rendering import spherical_harmonics
 
 class GaussianRenderer(nn.Module):
-    def __init__(self, im_height = 224, im_width = 224, znear=0.01, zfar=100.0):
+    def __init__(self, im_height = 384, im_width = 512, znear=0.01, zfar=100.0):
         super().__init__()
         self.im_height = int(im_height)
         self.im_width = int(im_width)
         self.znear = znear
         self.zfar = zfar
 
-        self.register_buffer("bg_color", torch.ones((1, 3), dtype=torch.float32))
+        self.register_buffer("bg_color", (-1)*torch.ones((1, 3), dtype=torch.float32))
 
     def set_view_info(self, height=0, width=0, znear=0.01, zfar=100.0):
         self.im_height = int(height)
